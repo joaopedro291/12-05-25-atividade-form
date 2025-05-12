@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastro com Imagem</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { background: #4CAF50; color: white; padding: 10px; border: none; cursor: pointer; width: 100%; }
+        #preview { max-width: 200px; margin-top: 10px; display: none; }
+        #message { margin-top: 15px; padding: 10px; }
+        .success { background: #dff0d8; color: #3c763d; }
+        .error { background: #f2dede; color: #a94442; }
+    </style>
+</head>
+<body>
+    <h1>Cadastro com Imagem</h1>
+    <form id="cadastroForm" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" value="cadastro">
+        
+        <div class="form-group">
+            <label for="nome">Nome:</label>
+            <input type="text" id="nome" name="nome" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="login">Login:</label>
+            <input type="text" id="login" name="login" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="senha">Senha:</label>
+            <input type="password" id="senha" name="senha" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="imagem">Imagem de Perfil:</label>
+            <input type="file" id="imagem" name="imagem" accept="image/*">
+            <img id="preview" alt="Pré-visualização da imagem">
+        </div>
+        
+        <button type="submit">Cadastrar</button>
+    </form>
+    
+    <div id="message"></div>
+    
+    <script>
+        // Pré-visualização da imagem
+        document.getElementById('imagem').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const preview = document.getElementById('preview');
+                preview.src = URL.createObjectURL(file);
+                preview.style.display = 'block';
+            }
+        });
+
+        // Envio do formulário
+        document.getElementById('cadastroForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = '';
+            messageDiv.className = '';
+            
+            try {
+                const response = await fetch('/api/mysql', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    messageDiv.textContent = result.message;
+                    messageDiv.className = 'success';
+                    
+                    if (result.imagemUrl) {
+                        messageDiv.innerHTML += `<br><img src="${result.imagemUrl}" style="max-width:200px;margin-top:10px;">`;
+                    }
+                    
+                    this.reset();
+                    document.getElementById('preview').style.display = 'none';
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (err) {
+                messageDiv.textContent = err.message;
+                messageDiv.className = 'error';
+            }
+        });
+    </script>
+</body>
+</html>
