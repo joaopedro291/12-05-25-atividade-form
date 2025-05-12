@@ -20,7 +20,10 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
+        const uniqueFilename = uniqueSuffix + path.extname(file.originalname);
+        // Armazena o nome original no request para uso posterior
+        req.originalFilename = file.originalname; 
+        cb(null, uniqueFilename);
     }
 });
 
@@ -57,21 +60,25 @@ const pool = mysql.createPool({
 
 app.post('/api/mysql', upload.single('imagem'), async (req, res) => {
     const { nome, login, senha, tipo, id } = req.body;
-    const imagem = req.file ? req.file.filename : null;
+    const imagem = req.file ? {
+        filename: req.file.filename, // Nome único do arquivo
+        originalname: req.originalFilename // Nome original do arquivo
+    } : null;
 
     try {
         switch (tipo) {
             case 'cadastro':
                 const [rows] = await pool.query(
-                    "INSERT INTO tbl_cadastro (nome, login, senha, imagem) VALUES (?, ?, ?, ?)",
-                    [nome, login, senha, imagem] // Senha em texto puro
+                    "INSERT INTO tbl_cadastro (nome, login, senha, imagem_nome_unico, imagem_nome_original) VALUES (?, ?, ?, ?, ?)",
+                    [nome, login, senha, imagem?.filename, imagem?.originalname]
                 );
                 
                 if (rows.affectedRows > 0) {
                     res.json({ 
                         success: true,
                         message: 'Usuário cadastrado com sucesso!',
-                        imagemUrl: imagem ? `/uploads/${imagem}` : null
+                        imagemUrl: imagem ? `/uploads/${imagem.filename}` : null,
+                        imagemOriginal: imagem?.originalname
                     });
                 } else {
                     throw new Error('Não foi possível cadastrar o usuário!');
@@ -80,19 +87,21 @@ app.post('/api/mysql', upload.single('imagem'), async (req, res) => {
 
             case 'login':
                 const [users] = await pool.query(
-                    "SELECT * FROM tbl_cadastro WHERE login = ? AND senha = ?", // Comparação direta
+                    "SELECT * FROM tbl_cadastro WHERE login = ? AND senha = ?",
                     [login, senha]
                 );
                 
                 if (users.length === 1) {
+                    const user = users[0];
                     res.json({
                         success: true,
                         message: 'Login bem-sucedido',
                         user: {
-                            id: users[0].id,
-                            nome: users[0].nome,
-                            login: users[0].login,
-                            imagem: users[0].imagem ? `/uploads/${users[0].imagem}` : null
+                            id: user.id,
+                            nome: user.nome,
+                            login: user.login,
+                            imagemUrl: user.imagem_nome_unico ? `/uploads/${user.imagem_nome_unico}` : null,
+                            imagemOriginal: user.imagem_nome_original
                         }
                     });
                 } else {
@@ -105,7 +114,7 @@ app.post('/api/mysql', upload.single('imagem'), async (req, res) => {
 
             case 'leitura':
                 const [searchResults] = await pool.query(
-                    "SELECT id, nome, login FROM tbl_cadastro WHERE nome LIKE ? OR login LIKE ?",
+                    "SELECT id, nome, login, imagem_nome_original FROM tbl_cadastro WHERE nome LIKE ? OR login LIKE ?",
                     [`%${nome}%`, `%${login}%`]
                 );
                 
@@ -121,9 +130,38 @@ app.post('/api/mysql', upload.single('imagem'), async (req, res) => {
                 break;
 
             case 'atualizar':
+                const updateFields = [];
+                const updateValues = [];
+                
+                if (nome) {
+                    updateFields.push('nome = ?');
+                    updateValues.push(nome);
+                }
+                
+                if (login) {
+                    updateFields.push('login = ?');
+                    updateValues.push(login);
+                }
+                
+                if (senha) {
+                    updateFields.push('senha = ?');
+                    updateValues.push(senha);
+                }
+                
+                if (req.file) {
+                    updateFields.push('imagem_nome_unico = ?', 'imagem_nome_original = ?');
+                    updateValues.push(req.file.filename, req.originalFilename);
+                }
+                
+                if (updateFields.length === 0) {
+                    throw new Error('Nenhum campo fornecido para atualização');
+                }
+                
+                updateValues.push(id);
+                
                 const [updateResult] = await pool.query(
-                    "UPDATE tbl_cadastro SET nome = ?, login = ?, senha = ? WHERE id = ?",
-                    [nome, login, senha, id]
+                    `UPDATE tbl_cadastro SET ${updateFields.join(', ')} WHERE id = ?`,
+                    updateValues
                 );
                 
                 if (updateResult.affectedRows > 0) {
